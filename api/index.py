@@ -22,12 +22,21 @@ TURSO_AUTH_TOKEN = os.getenv(
 )
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "yt_sec_794ae71a4f71a66b5dd66774")
 
-# Locate cookies.txt if present
-COOKIES_FILE = None
-for p in [Path("cookies.txt"), Path("api/cookies.txt"), Path(__file__).parent / "cookies.txt"]:
-    if p.exists() and p.stat().st_size > 0:
-        COOKIES_FILE = str(p)
-        break
+def get_writable_cookies() -> Optional[str]:
+    """Ensures cookies are in /tmp so yt-dlp can read and write without Read-only filesystem error."""
+    tmp_path = Path("/tmp/cookies.txt")
+    if not tmp_path.exists():
+        for p in [Path("cookies.txt"), Path("api/cookies.txt"), Path(__file__).parent / "cookies.txt"]:
+            if p.exists() and p.stat().st_size > 0:
+                try:
+                    tmp_path.write_text(p.read_text(encoding="utf-8", errors="ignore"), encoding="utf-8")
+                    break
+                except Exception:
+                    pass
+    if tmp_path.exists():
+        return str(tmp_path)
+    return None
+
 
 
 # ==========================================
@@ -150,11 +159,14 @@ def extract_youtube_stream(url: str, media_type: str = "video", quality: str = "
         "quiet": True,
         "no_warnings": True,
         "extract_flat": False,
+        "cachedir": False,
+        "remote_components": ["ejs:github"],
         "youtube_include_dash_manifest": False,
         "youtube_include_hls_manifest": False,
     }
-    if COOKIES_FILE:
-        ydl_opts["cookiefile"] = COOKIES_FILE
+    cookie_file = get_writable_cookies()
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
